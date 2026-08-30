@@ -1,0 +1,12 @@
+{
+  "name": "fft-sound-analyzer",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build:wasm": "wasm-pack build crates/fft-wasm --target web --release --out-dir ../../frontend/src/wasm/pkg",
+    "build:wasm:dev": "wasm-pack build crates/fft-wasm --target web --dev --out-dir ../../frontend/src/wasm/pkg",
+    "dev": "npm run build:wasm:dev && npm --prefix frontend run dev",
+    "lint": "npm --prefix frontend run lint",
+    "build": "npm run build:wasm && npm --prefix frontend run build"
+  }
+}
