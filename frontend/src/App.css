@@ -50,12 +50,22 @@ label {
 }
 
 select,
+input,
 button {
   border-radius: 8px;
   border: 1px solid #334155;
   background: #111827;
   color: #f8fafc;
   padding: 8px 10px;
+}
+
+input[type='range'] {
+  accent-color: #34d399;
+  min-width: 0;
+}
+
+input[type='number'] {
+  min-width: 0;
 }
 
 button {
@@ -86,9 +96,35 @@ button:disabled {
   gap: 10px;
 }
 
+.plot-heading {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
 .plot-block h2 {
   margin: 0;
   font-size: 1rem;
+}
+
+.plot-heading span {
+  color: #94a3b8;
+  font-size: 0.86rem;
+}
+
+.waveform-range-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.range-with-number {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(72px, 96px);
+  gap: 8px;
+  align-items: center;
 }
 
 .plot-canvas {

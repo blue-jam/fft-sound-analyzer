@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { drawHorizontalAxisLabels, niceCeilStep, type AxisTick } from './axisUtils'
 
 const OPEN_STRING_NOTES = [
   { name: 'E2', freq: 82.41 },
@@ -10,6 +11,7 @@ const OPEN_STRING_NOTES = [
 ]
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+const X_AXIS_LABEL_HEIGHT = 28
 
 type FrequencyScale = 'linear' | 'log'
 type AmplitudeScale = 'linear' | 'dbfs'
@@ -65,6 +67,51 @@ function amplitudeToY(value: number, height: number, scale: AmplitudeScale) {
   return height - Math.min(1, Math.max(0, value)) * height
 }
 
+function formatFrequencyTick(frequency: number) {
+  if (frequency >= 1000) {
+    const value = frequency / 1000
+    return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)} kHz`
+  }
+
+  return `${Math.round(frequency)} Hz`
+}
+
+function createLinearFrequencyTicks(maxFrequency: number, width: number) {
+  const targetLabels = Math.min(7, Math.max(3, Math.floor(width / 150) + 1))
+  const step = niceCeilStep(maxFrequency, targetLabels - 1)
+  const values = new Set<number>([0, maxFrequency])
+
+  for (let frequency = step; frequency < maxFrequency; frequency += step) {
+    values.add(frequency)
+  }
+
+  return Array.from(values)
+    .sort((a, b) => a - b)
+    .map((value) => ({ value, label: formatFrequencyTick(value) }))
+}
+
+function createLogFrequencyTicks(maxFrequency: number) {
+  const values = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000].filter(
+    (value) => value <= maxFrequency,
+  )
+
+  if (maxFrequency > 20) {
+    values.push(maxFrequency)
+  }
+
+  return values.map((value) => ({ value, label: formatFrequencyTick(value) }))
+}
+
+function createFrequencyTicks(maxFrequency: number, width: number, scale: FrequencyScale): AxisTick[] {
+  if (!Number.isFinite(maxFrequency) || maxFrequency <= 0) {
+    return []
+  }
+
+  return scale === 'log'
+    ? createLogFrequencyTicks(maxFrequency)
+    : createLinearFrequencyTicks(maxFrequency, width)
+}
+
 export function SpectrumCanvas({ spectrum, sampleRate, fftSize, frequencyScale, amplitudeScale }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
@@ -81,6 +128,7 @@ export function SpectrumCanvas({ spectrum, sampleRate, fftSize, frequencyScale, 
 
     const width = canvas.width
     const height = canvas.height
+    const plotHeight = height - X_AXIS_LABEL_HEIGHT
     const maxFrequency = sampleRate / 2
 
     ctx.clearRect(0, 0, width, height)
@@ -95,7 +143,7 @@ export function SpectrumCanvas({ spectrum, sampleRate, fftSize, frequencyScale, 
       const x = frequencyToX(note.freq, maxFrequency, width, frequencyScale)
       ctx.beginPath()
       ctx.moveTo(x, 0)
-      ctx.lineTo(x, height)
+      ctx.lineTo(x, plotHeight)
       ctx.stroke()
     })
 
@@ -106,7 +154,7 @@ export function SpectrumCanvas({ spectrum, sampleRate, fftSize, frequencyScale, 
       const x = frequencyToX(note.freq, maxFrequency, width, frequencyScale)
       ctx.beginPath()
       ctx.moveTo(x, 0)
-      ctx.lineTo(x, height)
+      ctx.lineTo(x, plotHeight)
       ctx.stroke()
       ctx.fillText(note.name, Math.min(width - 32, x + 4), 14)
     })
@@ -118,7 +166,7 @@ export function SpectrumCanvas({ spectrum, sampleRate, fftSize, frequencyScale, 
     for (let i = 0; i < spectrum.length; i += 1) {
       const frequency = (i * sampleRate) / fftSize
       const x = frequencyToX(frequency, maxFrequency, width, frequencyScale)
-      const y = amplitudeToY(spectrum[i], height, amplitudeScale)
+      const y = amplitudeToY(spectrum[i], plotHeight, amplitudeScale)
 
       if (i === 0) {
         ctx.moveTo(x, y)
@@ -131,8 +179,16 @@ export function SpectrumCanvas({ spectrum, sampleRate, fftSize, frequencyScale, 
 
     ctx.fillStyle = '#cbd5e1'
     ctx.font = '11px sans-serif'
-    ctx.fillText(`Freq: ${frequencyScale.toUpperCase()}`, 8, height - 26)
-    ctx.fillText(`Amp: ${amplitudeScale === 'dbfs' ? 'dBFS' : 'Linear'}`, 8, height - 10)
+    ctx.fillText(`Freq: ${frequencyScale.toUpperCase()}`, 8, plotHeight - 26)
+    ctx.fillText(`Amp: ${amplitudeScale === 'dbfs' ? 'dBFS' : 'Linear'}`, 8, plotHeight - 10)
+
+    drawHorizontalAxisLabels(
+      ctx,
+      createFrequencyTicks(maxFrequency, width, frequencyScale),
+      (frequency) => frequencyToX(frequency, maxFrequency, width, frequencyScale),
+      width,
+      plotHeight + 0.5,
+    )
   }, [amplitudeScale, fftSize, frequencyScale, sampleRate, spectrum])
 
   return <canvas ref={canvasRef} width={980} height={320} className="plot-canvas" />
