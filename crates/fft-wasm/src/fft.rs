@@ -27,7 +27,7 @@ pub fn apply_window(input: &[f32], output: &mut [f32], window: WindowKind) {
         return;
     }
 
-    let denom = (n - 1) as f32;
+    let denom = n as f32;
     for (i, sample) in input.iter().copied().enumerate() {
         let phase = 2.0 * PI * (i as f32) / denom;
         let coefficient = match window {
@@ -124,7 +124,7 @@ mod tests {
         apply_window(&input, &mut output, WindowKind::Hann);
 
         assert!(output[0] < 1e-6);
-        assert!(output[7] < 1e-6);
-        assert!(output[3] > 0.9);
+        assert!(output[7] > 0.1);
+        assert!(output[3] > 0.8);
     }
 }

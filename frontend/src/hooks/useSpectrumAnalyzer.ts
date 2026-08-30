@@ -26,6 +26,19 @@ export function useSpectrumAnalyzer(fftSize: number, waveformIntervalMs: number,
   const bridgeRef = useRef<WasmFftBridge | null>(null)
   const frameRef = useRef<number | null>(null)
   const waveformTimerRef = useRef(0)
+  const timeDataRef = useRef(new Float32Array(fftSize))
+  const isStartingRef = useRef(false)
+  const isRunningRef = useRef(false)
+  const waveformIntervalRef = useRef(waveformIntervalMs)
+  const windowModeRef = useRef(windowMode)
+
+  useEffect(() => {
+    waveformIntervalRef.current = waveformIntervalMs
+  }, [waveformIntervalMs])
+
+  useEffect(() => {
+    windowModeRef.current = windowMode
+  }, [windowMode])
 
   const stop = useCallback(() => {
     if (frameRef.current !== null) {
@@ -44,11 +57,12 @@ export function useSpectrumAnalyzer(fftSize: number, waveformIntervalMs: number,
     audioContextRef.current = null
     streamRef.current = null
     bridgeRef.current = null
+    isRunningRef.current = false
 
     setState((current) => ({ ...current, isRunning: false }))
   }, [])
 
-  const drawFrame = useCallback(() => {
+  const drawFrame = useCallback(function renderFrame() {
     const analyser = analyserRef.current
     const bridge = bridgeRef.current
     const audioContext = audioContextRef.current
@@ -56,12 +70,12 @@ export function useSpectrumAnalyzer(fftSize: number, waveformIntervalMs: number,
       return
     }
 
-    const timeData = new Float32Array(fftSize)
+    const timeData = timeDataRef.current
     analyser.getFloatTimeDomainData(timeData)
 
-    const spectrumView = bridge.process(timeData, windowMode)
+    const spectrumView = bridge.process(timeData, windowModeRef.current)
     const now = performance.now()
-    const shouldUpdateWaveform = now - waveformTimerRef.current >= waveformIntervalMs
+    const shouldUpdateWaveform = now - waveformTimerRef.current >= waveformIntervalRef.current
 
     if (shouldUpdateWaveform) {
       waveformTimerRef.current = now
@@ -70,18 +84,22 @@ export function useSpectrumAnalyzer(fftSize: number, waveformIntervalMs: number,
     setState((current) => ({
       ...current,
       sampleRate: audioContext.sampleRate,
-      spectrum: new Float32Array(spectrumView),
-      waveform: shouldUpdateWaveform ? timeData : current.waveform,
+      spectrum: spectrumView,
+      waveform: shouldUpdateWaveform ? new Float32Array(timeData) : current.waveform,
       error: null,
     }))
 
-    frameRef.current = requestAnimationFrame(drawFrame)
-  }, [fftSize, waveformIntervalMs, windowMode])
+    frameRef.current = requestAnimationFrame(renderFrame)
+  }, [])
 
   const start = useCallback(async () => {
-    if (state.isRunning) {
+    if (isRunningRef.current) {
       return
     }
+    if (isStartingRef.current) {
+      return
+    }
+    isStartingRef.current = true
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -108,6 +126,7 @@ export function useSpectrumAnalyzer(fftSize: number, waveformIntervalMs: number,
       audioContextRef.current = audioContext
       bridgeRef.current = bridge
       waveformTimerRef.current = 0
+      isRunningRef.current = true
 
       setState((current) => ({
         ...current,
@@ -125,8 +144,10 @@ export function useSpectrumAnalyzer(fftSize: number, waveformIntervalMs: number,
         error: error instanceof Error ? error.message : 'Failed to start audio analyzer',
       }))
       stop()
+    } finally {
+      isStartingRef.current = false
     }
-  }, [drawFrame, fftSize, state.isRunning, stop])
+  }, [drawFrame, fftSize, stop])
 
   useEffect(() => {
     if (!state.isRunning) {
@@ -141,6 +162,7 @@ export function useSpectrumAnalyzer(fftSize: number, waveformIntervalMs: number,
 
     analyser.fftSize = fftSize
     bridge.resize(fftSize)
+    timeDataRef.current = new Float32Array(fftSize)
 
     setState((current) => ({
       ...current,

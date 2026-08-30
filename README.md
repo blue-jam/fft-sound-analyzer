@@ -25,7 +25,7 @@
 ### インストール
 
 ```bash
-cd /home/runner/work/fft-sound-analyzer/fft-sound-analyzer
+cd fft-sound-analyzer
 npm install --prefix frontend
 cargo install wasm-pack --locked
 ```

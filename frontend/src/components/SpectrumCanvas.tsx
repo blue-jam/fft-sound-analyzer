@@ -115,12 +115,12 @@ export function SpectrumCanvas({ spectrum, sampleRate, fftSize, frequencyScale, 
     ctx.lineWidth = 2
     ctx.strokeStyle = '#7dd3fc'
 
-    for (let i = 1; i < spectrum.length; i += 1) {
+    for (let i = 0; i < spectrum.length; i += 1) {
       const frequency = (i * sampleRate) / fftSize
       const x = frequencyToX(frequency, maxFrequency, width, frequencyScale)
       const y = amplitudeToY(spectrum[i], height, amplitudeScale)
 
-      if (i === 1) {
+      if (i === 0) {
         ctx.moveTo(x, y)
       } else {
         ctx.lineTo(x, y)
