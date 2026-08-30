@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { drawHorizontalAxisLabels, niceCeilStep, type AxisTick } from './axisUtils'
 
 const OPEN_STRING_NOTES = [
@@ -24,6 +24,27 @@ type Props = {
   amplitudeScale: AmplitudeScale
 }
 
+function midiToPitchName(midi: number) {
+  const noteName = NOTE_NAMES[midi % 12]
+  const octave = Math.floor(midi / 12) - 1
+
+  return `${noteName}${octave}`
+}
+
+function frequencyToNearestPitch(frequency: number) {
+  if (!Number.isFinite(frequency) || frequency <= 0) {
+    return null
+  }
+
+  const midi = Math.round(69 + 12 * Math.log2(frequency / 440))
+  const pitchFrequency = 440 * 2 ** ((midi - 69) / 12)
+
+  return {
+    name: midiToPitchName(midi),
+    frequency: pitchFrequency,
+  }
+}
+
 function createSemitoneGuides(minFrequency: number, maxFrequency: number) {
   const frequencies: Array<{ name: string; freq: number }> = []
 
@@ -32,9 +53,7 @@ function createSemitoneGuides(minFrequency: number, maxFrequency: number) {
     if (freq < minFrequency || freq > maxFrequency) {
       continue
     }
-    const noteName = NOTE_NAMES[midi % 12]
-    const octave = Math.floor(midi / 12) - 1
-    frequencies.push({ name: `${noteName}${octave}`, freq })
+    frequencies.push({ name: midiToPitchName(midi), freq })
   }
 
   return frequencies
@@ -56,6 +75,20 @@ function frequencyToX(freq: number, maxFreq: number, width: number, scale: Frequ
   return (freq / maxFreq) * width
 }
 
+function xToFrequency(x: number, maxFreq: number, width: number, scale: FrequencyScale) {
+  const normalized = Math.min(1, Math.max(0, x / width))
+
+  if (scale === 'log') {
+    const minFreq = 20
+    const logMin = Math.log10(minFreq)
+    const logMax = Math.log10(maxFreq)
+
+    return 10 ** (logMin + normalized * (logMax - logMin))
+  }
+
+  return normalized * maxFreq
+}
+
 function amplitudeToY(value: number, height: number, scale: AmplitudeScale) {
   if (scale === 'dbfs') {
     const db = 20 * Math.log10(Math.max(value, 1e-8))
@@ -74,6 +107,19 @@ function formatFrequencyTick(frequency: number) {
   }
 
   return `${Math.round(frequency)} Hz`
+}
+
+function formatCursorFrequency(frequency: number) {
+  if (frequency >= 1000) {
+    const value = frequency / 1000
+    return `${value.toFixed(value >= 10 ? 1 : 2)} kHz`
+  }
+
+  if (frequency >= 10) {
+    return `${frequency.toFixed(1)} Hz`
+  }
+
+  return `${frequency.toFixed(2)} Hz`
 }
 
 function createLinearFrequencyTicks(maxFrequency: number, width: number) {
@@ -114,6 +160,33 @@ function createFrequencyTicks(maxFrequency: number, width: number, scale: Freque
 
 export function SpectrumCanvas({ spectrum, sampleRate, fftSize, frequencyScale, amplitudeScale }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
+
+  const handlePointerMove = useCallback((event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current
+    if (!canvas) {
+      return
+    }
+
+    const rect = canvas.getBoundingClientRect()
+    const x = ((event.clientX - rect.left) / rect.width) * canvas.width
+    const y = ((event.clientY - rect.top) / rect.height) * canvas.height
+    const plotHeight = canvas.height - X_AXIS_LABEL_HEIGHT
+
+    if (x < 0 || x > canvas.width || y < 0 || y > plotHeight) {
+      setCursor(null)
+      return
+    }
+
+    setCursor({
+      x: Math.min(canvas.width, Math.max(0, x)),
+      y: Math.min(plotHeight, Math.max(0, y)),
+    })
+  }, [])
+
+  const handlePointerLeave = useCallback(() => {
+    setCursor(null)
+  }, [])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -189,7 +262,61 @@ export function SpectrumCanvas({ spectrum, sampleRate, fftSize, frequencyScale, 
       width,
       plotHeight + 0.5,
     )
-  }, [amplitudeScale, fftSize, frequencyScale, sampleRate, spectrum])
 
-  return <canvas ref={canvasRef} width={980} height={320} className="plot-canvas" />
+    if (cursor) {
+      const cursorFrequency = xToFrequency(cursor.x, maxFrequency, width, frequencyScale)
+      const nearestPitch = frequencyToNearestPitch(cursorFrequency)
+      const labels = [
+        `Cursor: ${formatCursorFrequency(cursorFrequency)}`,
+        nearestPitch
+          ? `Nearest: ${nearestPitch.name} (${formatCursorFrequency(nearestPitch.frequency)})`
+          : 'Nearest: --',
+      ]
+      const labelPaddingX = 8
+      const labelPaddingY = 6
+      const labelLineHeight = 16
+
+      ctx.save()
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.9)'
+      ctx.lineWidth = 1
+      ctx.setLineDash([4, 4])
+      ctx.beginPath()
+      ctx.moveTo(cursor.x + 0.5, 0)
+      ctx.lineTo(cursor.x + 0.5, plotHeight)
+      ctx.stroke()
+
+      ctx.setLineDash([])
+      ctx.font = '12px sans-serif'
+      ctx.textBaseline = 'top'
+
+      const textWidth = Math.max(...labels.map((label) => ctx.measureText(label).width))
+      const labelWidth = textWidth + labelPaddingX * 2
+      const labelHeight = labels.length * labelLineHeight + labelPaddingY * 2
+      const labelX = Math.min(width - labelWidth - 6, Math.max(6, cursor.x + 10))
+      const labelY = Math.min(plotHeight - labelHeight - 6, Math.max(6, cursor.y + 10))
+
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.94)'
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.8)'
+      ctx.fillRect(labelX, labelY, labelWidth, labelHeight)
+      ctx.strokeRect(labelX, labelY, labelWidth, labelHeight)
+
+      ctx.fillStyle = '#ecfdf5'
+      labels.forEach((label, index) => {
+        ctx.fillText(label, labelX + labelPaddingX, labelY + labelPaddingY + index * labelLineHeight)
+      })
+      ctx.restore()
+    }
+  }, [amplitudeScale, cursor, fftSize, frequencyScale, sampleRate, spectrum])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={980}
+      height={320}
+      className="plot-canvas spectrum-canvas"
+      onPointerMove={handlePointerMove}
+      onPointerLeave={handlePointerLeave}
+      onPointerCancel={handlePointerLeave}
+    />
+  )
 }

@@ -134,3 +134,8 @@ button:disabled {
   border-radius: 8px;
   background: #0b1120;
 }
+
+.spectrum-canvas {
+  cursor: crosshair;
+  touch-action: none;
+}
